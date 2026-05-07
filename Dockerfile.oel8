@@ -1,0 +1,23 @@
+FROM oraclelinux:8.2
+
+RUN dnf -y install oraclelinux-release-el8 curl tar gzip xz findutils \
+  && dnf -y module enable nodejs:18 \
+  && dnf -y install nodejs npm \
+  && dnf clean all
+
+WORKDIR /src/backend
+COPY backend/package*.json ./
+RUN npm install
+
+COPY backend/ ./
+COPY frontend/ /src/frontend/
+RUN npm run build:linux
+
+WORKDIR /src
+COPY .env.example /src/.env.example
+COPY scripts/run-oel8.sh /src/run-oel8.sh
+RUN mkdir -p /out \
+  && cp /src/dist/icu-stats /out/icu-stats \
+  && cp /src/.env.example /out/.env.example \
+  && cp /src/run-oel8.sh /out/run.sh \
+  && chmod +x /out/icu-stats /out/run.sh

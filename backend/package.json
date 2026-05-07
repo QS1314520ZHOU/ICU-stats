@@ -1,0 +1,30 @@
+{
+  "name": "icu-stats-backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "bin": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build:linux": "pkg . --targets node18-linux-x64 --output ../dist/icu-stats"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mongodb": "^6.5.0",
+    "cors": "^2.8.5",
+    "exceljs": "^4.4.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "pkg": {
+    "scripts": [
+      "routes/**/*.js",
+      "utils/**/*.js",
+      "db.js"
+    ],
+    "assets": [
+      "../frontend/**/*"
+    ]
+  }
+}

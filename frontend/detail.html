@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>病人详情</title>
+<link rel="stylesheet" href="css/style.css" />
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+</head>
+<body>
+<header>
+  <a href="index.html" class="link-btn">← 返回</a>
+  <h1 id="title">病人详情</h1>
+</header>
+
+<section class="card filter">
+  <label>开始: <input type="date" id="startDate" /></label>
+  <label>结束: <input type="date" id="endDate" /></label>
+  <button onclick="loadAll()">查询</button>
+  <button onclick="exportExcel()" class="btn-export">⬇ 导出 Excel</button>
+</section>
+
+<section class="card" id="baseInfo"></section>
+
+<section class="card">
+  <h2>微泵时长（methodCode ∈ 43/77）</h2>
+  <div id="chartDrug" style="height:380px"></div>
+  <div id="chartDrugDaily" style="height:340px"></div>
+  <table id="tblDrug">
+    <thead><tr><th>药品</th><th>规格</th><th>段数</th><th>总时长(小时)</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>氧疗途径时长</h2>
+  <div id="chartOxy" style="height:380px"></div>
+  <div id="chartOxyDaily" style="height:340px"></div>
+  <table id="tblOxy">
+    <thead><tr><th>strVal</th><th>段数</th><th>总时长(小时)</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<script src="js/detail.js"></script>
+</body>
+</html>

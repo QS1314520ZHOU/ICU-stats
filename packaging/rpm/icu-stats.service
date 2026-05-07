@@ -1,0 +1,16 @@
+[Unit]
+Description=ICU Stats
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/icu-stats/icu-stats.env
+WorkingDirectory=/opt/icu-stats
+ExecStart=/opt/icu-stats/icu-stats
+Restart=on-failure
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target
