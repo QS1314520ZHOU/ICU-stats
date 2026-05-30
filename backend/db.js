@@ -21,8 +21,24 @@ async function ensureIndexes(database) {
       { key: { code: 1, valid: 1, time: 1 }, name: "code_valid_time" }
     ]),
     database.collection("department").createIndexes([
-      { key: { code: 1 }, name: "code" },
-      { key: { name: 1 }, name: "name" }
+      { key: { code: 1 }, name: "dept_code" },
+      { key: { name: 1 }, name: "dept_name" }
+    ]),
+    // 俯卧位质控相关索引
+    database.collection("prone_session").createIndexes([
+      { key: { pid: 1, startTime: 1 }, name: "pid_startTime" },
+      { key: { mrn: 1, startTime: 1 }, name: "mrn_startTime" },
+      { key: { deptCode: 1, belongDate: 1 }, name: "deptCode_belongDate" },
+      { key: { belongDate: 1 }, name: "belongDate" },
+      { key: { isAbnormal: 1, abnormalReasons: 1 }, name: "isAbnormal_abnormalReasons" },
+      { key: { startEventId: 1 }, name: "startEventId_unique", unique: true },
+      { key: { deptCode: 1, isAbnormal: 1, belongDate: 1 }, name: "deptCode_isAbnormal_belongDate" }
+    ]),
+    database.collection("prone_quality_daily").createIndexes([
+      { key: { reportDate: 1, deptCode: 1 }, name: "reportDate_deptCode_unique", unique: true },
+      { key: { reportMonth: 1, deptCode: 1 }, name: "reportMonth_deptCode" },
+      { key: { deptCode: 1, reportDate: 1 }, name: "deptCode_reportDate" },
+      { key: { reportDate: 1, isTotal: 1 }, name: "reportDate_isTotal" }
     ])
   ]).catch((e) => {
     indexesReady = null;

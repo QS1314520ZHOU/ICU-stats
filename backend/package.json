@@ -12,7 +12,8 @@
     "mongodb": "^6.5.0",
     "cors": "^2.8.5",
     "exceljs": "^4.4.0",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "node-cron": "^3.0.3"
   },
   "devDependencies": {
     "pkg": "^5.8.1"
@@ -21,6 +22,7 @@
     "scripts": [
       "routes/**/*.js",
       "utils/**/*.js",
+      "cron/**/*.js",
       "db.js"
     ],
     "assets": [

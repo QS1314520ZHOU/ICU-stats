@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>ICU 俯卧位质控报表</title>
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="css/style.css" />
+<style>
+  :root {
+    --primary: #1a5276;
+    --primary-light: #2980b9;
+    --success: #27ae60;
+    --warning: #f39c12;
+    --danger: #e74c3c;
+    --info: #3498db;
+    --bg-light: #f8f9fa;
+    --border: #dee2e6;
+    --text: #2c3e50;
+    --text-light: #6c757d;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--text);
+    background: var(--bg-light);
+  }
+
+  header {
+    background: var(--primary);
+    color: white;
+    padding: 15px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  header nav a {
+    color: white;
+    text-decoration: none;
+    margin-left: 20px;
+    font-size: 14px;
+    opacity: 0.9;
+  }
+
+  header nav a:hover, header nav a.active {
+    opacity: 1;
+    text-decoration: underline;
+  }
+
+  .card {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    margin: 20px;
+    padding: 20px;
+  }
+
+  .card h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--primary);
+    margin: 0 0 20px 0;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--primary);
+  }
+
+  /* 筛选区域 */
+  .filter-section {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .filter-section label {
+    font-size: 14px;
+    color: var(--text);
+  }
+
+  .filter-section select, .filter-section input {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 14px;
+    color: var(--text);
+  }
+
+  .filter-section select:focus, .filter-section input:focus {
+    outline: none;
+    border-color: var(--primary-light);
+    box-shadow: 0 0 0 2px rgba(41, 128, 185, 0.2);
+  }
+
+  .filter-section button {
+    padding: 8px 20px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background 0.2s;
+  }
+
+  .filter-section button:hover {
+    background: var(--primary-light);
+  }
+
+  .btn-export {
+    background: var(--success) !important;
+  }
+
+  .btn-export:hover {
+    background: #229954 !important;
+  }
+
+  /* 质控指标概览 */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+  }
+
+  .metric-card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 15px;
+    text-align: center;
+    position: relative;
+  }
+
+  .metric-card.primary {
+    border-left: 4px solid var(--primary);
+  }
+
+  .metric-card.success {
+    border-left: 4px solid var(--success);
+  }
+
+  .metric-card.warning {
+    border-left: 4px solid var(--warning);
+  }
+
+  .metric-card.danger {
+    border-left: 4px solid var(--danger);
+  }
+
+  .metric-card.info {
+    border-left: 4px solid var(--info);
+  }
+
+  .metric-label {
+    font-size: 12px;
+    color: var(--text-light);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+  }
+
+  .metric-label .info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    background: var(--text-light);
+    color: white;
+    border-radius: 50%;
+    font-size: 10px;
+    cursor: help;
+  }
+
+  .metric-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .metric-unit {
+    font-size: 12px;
+    color: var(--text-light);
+    margin-top: 5px;
+  }
+
+  /* 提示框 */
+  .tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--text);
+    color: white;
+    padding: 10px 15px;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+
+  .tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: var(--text);
+  }
+
+  .metric-card:hover .tooltip {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  /* 表格样式 */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  th, td {
+    padding: 12px 15px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+  }
+
+  th {
+    background: var(--bg-light);
+    font-weight: 600;
+    color: var(--primary);
+    border-bottom: 2px solid var(--border);
+  }
+
+  tr:hover {
+    background: #f5f7fa;
+  }
+
+  .status-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .status-badge.normal {
+    background: #d4edda;
+    color: #155724;
+  }
+
+  .status-badge.abnormal {
+    background: #f8d7da;
+    color: #721c24;
+  }
+
+  .status-badge.warning {
+    background: #fff3cd;
+    color: #856404;
+  }
+
+  /* 趋势图工具栏 */
+  .chart-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .chart-toolbar-label {
+    font-size: 13px;
+    color: var(--text-light);
+    white-space: nowrap;
+  }
+
+  .chart-tabs {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .chart-tab {
+    padding: 5px 14px;
+    font-size: 12px;
+    border: none;
+    background: white;
+    color: var(--text-light);
+    cursor: pointer;
+    transition: all 0.2s;
+    border-right: 1px solid var(--border);
+  }
+
+  .chart-tab:last-child {
+    border-right: none;
+  }
+
+  .chart-tab:hover {
+    background: var(--bg-light);
+  }
+
+  .chart-tab.active {
+    background: var(--primary);
+    color: white;
+  }
+
+  /* 加载状态 */
+  .loading {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-light);
+  }
+
+  .loading::after {
+    content: "";
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-left: 10px;
+    vertical-align: middle;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* 响应式 */
+  @media (max-width: 768px) {
+    .metrics-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .filter-section {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .filter-section label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .filter-section select, .filter-section input {
+      flex: 1;
+    }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>ICU 俯卧位质控报表</h1>
+    <p id="subtitle" style="margin:5px 0 0; font-size:12px; opacity:0.8;">俯卧位治疗质量监控与分析</p>
+  </div>
+  <nav>
+    <a href="/">首页</a>
+    <a href="/prone.html" class="active">俯卧位质控</a>
+  </nav>
+</header>
+
+<section class="card">
+  <h2>查询条件</h2>
+  <div class="filter-section">
+    <label>科室:
+      <select id="deptFilter">
+        <option value="">全部科室</option>
+      </select>
+    </label>
+    <label>开始: <input type="date" id="startDate" /></label>
+    <label>结束: <input type="date" id="endDate" /></label>
+    <button onclick="applyFilter()">查询</button>
+    <button onclick="exportExcel()" class="btn-export">⬇ 导出 Excel</button>
+  </div>
+</section>
+
+<section class="card" id="summarySection">
+  <h2>质控指标概览</h2>
+  <div class="metrics-grid" id="metricsGrid">
+    <div class="loading">加载中...</div>
+  </div>
+</section>
+
+<section class="card" id="trendSection">
+  <h2>每日趋势</h2>
+  <div class="chart-toolbar">
+    <span class="chart-toolbar-label">右轴指标:</span>
+    <div class="chart-tabs" id="rateTabs">
+      <button class="chart-tab active" data-key="durationMetRate" onclick="switchRateTab('durationMetRate')">时长达标率</button>
+      <button class="chart-tab" data-key="indicationMetRate" onclick="switchRateTab('indicationMetRate')">适应症符合率</button>
+      <button class="chart-tab" data-key="effectiveRate" onclick="switchRateTab('effectiveRate')">治疗有效率</button>
+    </div>
+  </div>
+  <div id="trendChart" style="width:100%;height:380px;">
+    <div class="loading">加载中...</div>
+  </div>
+</section>
+
+<section class="card" id="deptSection">
+  <h2>科室明细</h2>
+  <table id="deptTable">
+    <thead>
+      <tr>
+        <th>科室名称</th>
+        <th>实施例次</th>
+        <th>有效例次</th>
+        <th>异常例次</th>
+        <th>时长达标率</th>
+        <th>适应症符合率</th>
+        <th>治疗有效率</th>
+        <th>累计时长</th>
+        <th>异常数据率</th>
+      </tr>
+    </thead>
+    <tbody id="deptTableBody">
+      <tr><td colspan="9" class="loading">加载中...</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="card" id="sessionSection" style="display:none">
+  <h2>
+    俯卧位治疗明细
+    <span id="sessionCount" style="font-size:12px; font-weight:normal; color:var(--text-light); margin-left:10px;"></span>
+  </h2>
+  <table id="sessionTable">
+    <thead>
+      <tr>
+        <th>患者</th>
+        <th>病案号</th>
+        <th>床号</th>
+        <th>主管医生</th>
+        <th>开始时间</th>
+        <th>结束时间</th>
+        <th>时长(h)</th>
+        <th>治疗前PF</th>
+        <th>治疗后PF</th>
+        <th>PF提升率</th>
+        <th>状态</th>
+      </tr>
+    </thead>
+    <tbody id="sessionTableBody">
+    </tbody>
+  </table>
+</section>
+
+<script src="vendor/echarts.min.js"></script>
+<script>
+const API_BASE = "/api/prone";
+let currentData = null;
+let trendChartInstance = null;
+let currentTrendData = null;
+let currentRateKey = "durationMetRate";
+
+const RATE_META = {
+  durationMetRate:    { label: "时长达标率",   color: "#27ae60" },
+  indicationMetRate:  { label: "适应症符合率", color: "#e67e22" },
+  effectiveRate:      { label: "治疗有效率",   color: "#8e44ad" }
+};
+
+// 页面加载时初始化
+document.addEventListener("DOMContentLoaded", function() {
+  initDateRange();
+  loadDeptList();
+  applyFilter();
+});
+
+// 初始化日期范围（默认最近30天）
+function initDateRange() {
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - 30);
+
+  document.getElementById("startDate").value = startDate.toISOString().substring(0, 10);
+  document.getElementById("endDate").value = endDate.toISOString().substring(0, 10);
+}
+
+// 加载科室列表
+async function loadDeptList() {
+  try {
+    const response = await fetch("/api/patients/depts");
+    const data = await response.json();
+
+    if (data.code === 0 && data.data) {
+      const select = document.getElementById("deptFilter");
+      data.data.forEach(dept => {
+        const option = document.createElement("option");
+        option.value = dept.code;
+        option.textContent = dept.name;
+        select.appendChild(option);
+      });
+    }
+  } catch (e) {
+    console.error("加载科室列表失败:", e);
+  }
+}
+
+// 应用筛选条件
+async function applyFilter() {
+  const startDate = document.getElementById("startDate").value;
+  const endDate = document.getElementById("endDate").value;
+  const deptCode = document.getElementById("deptFilter").value;
+
+  if (!startDate || !endDate) {
+    alert("请选择日期范围");
+    return;
+  }
+
+  try {
+    // 显示加载状态
+    document.getElementById("metricsGrid").innerHTML = '<div class="loading">加载中...</div>';
+    document.getElementById("deptTableBody").innerHTML = '<tr><td colspan="9" class="loading">加载中...</td></tr>';
+
+    // 获取质控汇总数据
+    const params = new URLSearchParams({ startDate, endDate });
+    if (deptCode) params.append("deptCode", deptCode);
+
+    const response = await fetch(`${API_BASE}/quality-summary?${params}`);
+    const data = await response.json();
+
+    if (data.code === 0) {
+      currentData = data.data;
+      renderSummary(data.data.hospitalSummary);
+      renderDeptTable(data.data.deptDetails);
+      loadDailyTrend(startDate, endDate, deptCode);
+      loadSessionDetails(startDate, endDate, deptCode);
+    } else {
+      alert("获取数据失败: " + data.msg);
+    }
+  } catch (e) {
+    console.error("获取数据失败:", e);
+    document.getElementById("metricsGrid").innerHTML = '<div style="color:var(--danger); text-align:center; padding:20px;">获取数据失败，请稍后重试</div>';
+  }
+}
+
+// 渲染概览卡片
+function renderSummary(summary) {
+  const container = document.getElementById("metricsGrid");
+
+  const metrics = [
+    {
+      label: "俯卧位实施例次",
+      value: summary.totalSessions || 0,
+      unit: "例",
+      class: "primary",
+      tooltip: "统计时间范围内有效的俯卧位开始事件总数（valid=true）"
+    },
+    {
+      label: "单次时长达标率",
+      value: summary.durationMetRate != null ? summary.durationMetRate.toFixed(1) : "-",
+      unit: "%",
+      class: "success",
+      tooltip: "分子：单次俯卧位时长≥16小时的有效治疗次数\n分母：所有有效治疗次数\n达标标准：单次俯卧位持续时间≥16小时"
+    },
+    {
+      label: "适应症符合率",
+      value: summary.indicationMetRate != null ? summary.indicationMetRate.toFixed(1) : "-",
+      unit: "%",
+      class: "info",
+      tooltip: "分子：俯卧位开始前PF<150mmHg的治疗次数\n分母：有治疗前血气数据的有效治疗次数\n适应症标准：PF比值<150mmHg（重度ARDS）"
+    },
+    {
+      label: "治疗有效率",
+      value: summary.effectiveRate != null ? summary.effectiveRate.toFixed(1) : "-",
+      unit: "%",
+      class: "success",
+      tooltip: "分子：治疗后PF较治疗前提升≥20%的治疗次数\n分母：有治疗前后血气数据的有效治疗次数\n有效标准：(治疗后PF-治疗前PF)/治疗前PF×100%≥20%"
+    },
+    {
+      label: "累计俯卧位时长",
+      value: summary.totalDurationHours != null ? summary.totalDurationHours.toFixed(1) : "-",
+      unit: "小时",
+      class: "info",
+      tooltip: "所有有效俯卧位治疗的持续时间总和\n仅统计正常治疗，不包含异常数据"
+    },
+    {
+      label: "异常数据率",
+      value: summary.abnormalRate != null ? summary.abnormalRate.toFixed(1) : "-",
+      unit: "%",
+      class: summary.abnormalRate > 10 ? "danger" : "warning",
+      tooltip: "分子：异常治疗次数（未闭合、时长异常、顺序异常等）\n分母：总治疗次数\n异常类型：未闭合(>24h)、时长<2h、时长>24h、顺序异常、孤立结束"
+    }
+  ];
+
+  container.innerHTML = metrics.map(m => `
+    <div class="metric-card ${m.class}">
+      <div class="metric-label">
+        ${m.label}
+        <span class="info-icon" title="点击查看计算说明">?</span>
+      </div>
+      <div class="metric-value">${m.value}</div>
+      <div class="metric-unit">${m.unit}</div>
+      <div class="tooltip">${m.tooltip.replace(/\n/g, '<br>')}</div>
+    </div>
+  `).join("");
+}
+
+// 渲染科室表格
+function renderDeptTable(deptDetails) {
+  const tbody = document.getElementById("deptTableBody");
+
+  if (!deptDetails || deptDetails.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="color:var(--text-light);">暂无数据</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = deptDetails.map(dept => `
+    <tr onclick="loadDeptSessions('${dept.deptCode}')" style="cursor:pointer">
+      <td style="text-align:left; font-weight:500;">${dept.deptName || dept.deptCode}</td>
+      <td>${dept.totalSessions || 0}</td>
+      <td>${dept.validSessions || 0}</td>
+      <td>${dept.abnormalSessions || 0}</td>
+      <td>${dept.durationMetRate != null ? dept.durationMetRate.toFixed(1) + '%' : '-'}</td>
+      <td>${dept.indicationMetRate != null ? dept.indicationMetRate.toFixed(1) + '%' : '-'}</td>
+      <td>${dept.effectiveRate != null ? dept.effectiveRate.toFixed(1) + '%' : '-'}</td>
+      <td>${dept.totalDurationHours != null ? dept.totalDurationHours.toFixed(1) + 'h' : '-'}</td>
+      <td>
+        <span class="status-badge ${dept.abnormalRate > 10 ? 'abnormal' : dept.abnormalRate > 5 ? 'warning' : 'normal'}">
+          ${dept.abnormalRate != null ? dept.abnormalRate.toFixed(1) + '%' : '-'}
+        </span>
+      </td>
+    </tr>
+  `).join("");
+}
+
+// 加载每日趋势数据
+async function loadDailyTrend(startDate, endDate, deptCode) {
+  try {
+    const params = new URLSearchParams({ startDate, endDate });
+    if (deptCode) params.append("deptCode", deptCode);
+
+    const response = await fetch(`${API_BASE}/daily-trend?${params}`);
+    const data = await response.json();
+
+    if (data.code === 0 && data.data.trend) {
+      renderTrendChart(data.data.trend);
+    }
+  } catch (e) {
+    console.error("加载趋势数据失败:", e);
+    document.getElementById("trendChart").innerHTML = '<div style="color:var(--text-light); text-align:center; padding:20px;">加载趋势数据失败</div>';
+  }
+}
+
+// 切换右轴指标 Tab
+function switchRateTab(key) {
+  currentRateKey = key;
+  document.querySelectorAll("#rateTabs .chart-tab").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.key === key);
+  });
+  if (currentTrendData) renderTrendChart(currentTrendData);
+}
+
+// 渲染趋势图（ECharts 复合图：柱状图 + 折线图，双 Y 轴）
+function renderTrendChart(trend) {
+  const container = document.getElementById("trendChart");
+
+  if (!trend || trend.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-light); text-align:center; padding:40px;">暂无趋势数据</div>';
+    return;
+  }
+
+  currentTrendData = trend;
+
+  // 初始化或获取 ECharts 实例
+  if (!trendChartInstance) {
+    container.innerHTML = "";
+    trendChartInstance = echarts.init(container);
+    window.addEventListener("resize", () => trendChartInstance && trendChartInstance.resize());
+  }
+
+  const dates = trend.map(t => t.date.substring(5));
+  const sessions = trend.map(t => t.totalSessions || 0);
+  const meta = RATE_META[currentRateKey];
+  const rates = trend.map(t => t[currentRateKey] != null ? +t[currentRateKey].toFixed(1) : null);
+
+  const option = {
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "cross" },
+      formatter: function(params) {
+        let html = `<strong>${params[0].axisValue}</strong><br/>`;
+        params.forEach(p => {
+          if (p.value == null) return;
+          html += `${p.marker} ${p.seriesName}: <strong>${p.value}${p.seriesType === "line" ? "%" : ""}</strong><br/>`;
+        });
+        return html;
+      }
+    },
+    legend: {
+      data: ["每日例次", meta.label],
+      top: 0,
+      right: 10,
+      textStyle: { fontSize: 12 }
+    },
+    grid: {
+      left: 55,
+      right: 65,
+      top: 40,
+      bottom: 30
+    },
+    xAxis: {
+      type: "category",
+      data: dates,
+      axisLabel: { fontSize: 11, color: "#6c757d" },
+      axisTick: { alignWithLabel: true }
+    },
+    yAxis: [
+      {
+        type: "value",
+        name: "例次",
+        nameTextStyle: { fontSize: 11, color: "#6c757d", padding: [0, 40, 0, 0] },
+        axisLabel: { fontSize: 11, color: "#6c757d" },
+        splitLine: { lineStyle: { type: "dashed", color: "#e9ecef" } },
+        minInterval: 1
+      },
+      {
+        type: "value",
+        name: meta.label + " (%)",
+        nameTextStyle: { fontSize: 11, color: meta.color, padding: [0, 0, 0, 40] },
+        axisLabel: { fontSize: 11, color: meta.color, formatter: "{value}%" },
+        splitLine: { show: false },
+        min: 0,
+        max: 100
+      }
+    ],
+    series: [
+      {
+        name: "每日例次",
+        type: "bar",
+        yAxisIndex: 0,
+        barMaxWidth: 28,
+        itemStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: "#1a5276" },
+            { offset: 1, color: "#2980b9" }
+          ]),
+          borderRadius: [3, 3, 0, 0]
+        },
+        emphasis: { itemStyle: { color: "#2471a3" } },
+        data: sessions
+      },
+      {
+        name: meta.label,
+        type: "line",
+        yAxisIndex: 1,
+        symbol: "circle",
+        symbolSize: 6,
+        smooth: true,
+        lineStyle: { width: 2.5, color: meta.color },
+        itemStyle: { color: meta.color },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: meta.color + "30" },
+            { offset: 1, color: meta.color + "05" }
+          ])
+        },
+        connectNulls: true,
+        data: rates
+      }
+    ]
+  };
+
+  trendChartInstance.setOption(option, true);
+}
+
+// 加载俯卧位治疗明细
+async function loadSessionDetails(startDate, endDate, deptCode) {
+  try {
+    const params = new URLSearchParams({ startDate, endDate });
+    if (deptCode) params.append("deptCode", deptCode);
+
+    const response = await fetch(`${API_BASE}/session-details?${params}`);
+    const data = await response.json();
+
+    if (data.code === 0 && data.data.details) {
+      renderSessionTable(data.data.details);
+    }
+  } catch (e) {
+    console.error("加载俯卧位治疗明细失败:", e);
+  }
+}
+
+// 渲染俯卧位治疗明细表格
+function renderSessionTable(details) {
+  const section = document.getElementById("sessionSection");
+  const tbody = document.getElementById("sessionTableBody");
+  const countSpan = document.getElementById("sessionCount");
+
+  section.style.display = "block";
+  countSpan.textContent = `共 ${details.length} 条记录`;
+
+  if (!details || details.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="11" style="color:var(--text-light);">暂无数据</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = details.map(session => `
+    <tr>
+      <td>${session.patientName || '-'}</td>
+      <td>${session.mrn || '-'}</td>
+      <td>${session.bed || '-'}</td>
+      <td>${session.bedDoctor || '-'}</td>
+      <td>${formatDateTime(session.startTime)}</td>
+      <td>${session.endTime ? formatDateTime(session.endTime) : '<span style="color:var(--warning);">进行中</span>'}</td>
+      <td>${session.durationHours != null ? session.durationHours.toFixed(1) : '-'}</td>
+      <td>${session.prePFRatio != null ? session.prePFRatio.toFixed(0) : '<span style="color:var(--text-light);">无数据</span>'}</td>
+      <td>${session.postPFRatio != null ? session.postPFRatio.toFixed(0) : '<span style="color:var(--text-light);">无数据</span>'}</td>
+      <td>${session.pfImprovementRate != null ?
+        (session.pfImprovementRate >= 0 ? '+' : '') + session.pfImprovementRate.toFixed(1) + '%' :
+        '<span style="color:var(--text-light);">-</span>'}</td>
+      <td>
+        <span class="status-badge ${session.isAbnormal ? 'abnormal' : 'normal'}">
+          ${session.isAbnormal ? '异常' : '正常'}
+        </span>
+      </td>
+    </tr>
+  `).join("");
+}
+
+// 加载科室俯卧位治疗明细
+async function loadDeptSessions(deptCode) {
+  const startDate = document.getElementById("startDate").value;
+  const endDate = document.getElementById("endDate").value;
+
+  try {
+    const params = new URLSearchParams({ startDate, endDate, deptCode });
+    const response = await fetch(`${API_BASE}/session-details?${params}`);
+    const data = await response.json();
+
+    if (data.code === 0 && data.data.details) {
+      renderSessionTable(data.data.details);
+      // 滚动到俯卧位治疗明细表格
+      document.getElementById("sessionSection").scrollIntoView({ behavior: "smooth" });
+    }
+  } catch (e) {
+    console.error("加载科室俯卧位治疗明细失败:", e);
+  }
+}
+
+// 导出 Excel
+function exportExcel() {
+  const startDate = document.getElementById("startDate").value;
+  const endDate = document.getElementById("endDate").value;
+  const deptCode = document.getElementById("deptFilter").value;
+
+  if (!startDate || !endDate) {
+    alert("请先选择日期范围");
+    return;
+  }
+
+  const params = new URLSearchParams({ startDate, endDate });
+  if (deptCode) params.append("deptCode", deptCode);
+
+  window.open(`${API_BASE}/export?${params}`, "_blank");
+}
+
+// 格式化日期时间
+function formatDateTime(dateStr) {
+  if (!dateStr) return "-";
+  const date = new Date(dateStr);
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+</script>
+</body>
+</html>

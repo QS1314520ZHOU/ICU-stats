@@ -1,3 +1,6 @@
 .env
 dist/
 release/
+node_modules/
+*.tar
+icu-stats/
