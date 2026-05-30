@@ -9,8 +9,20 @@
 </head>
 <body>
 <header>
-  <a href="index.html" class="link-btn">← 返回</a>
-  <h1 id="title">病人详情</h1>
+  <div>
+    <h1>ICU 质控管理平台</h1>
+    <p>重症质量管理与决策支持</p>
+  </div>
+  <nav>
+    <a href="/index.html">首页</a>
+    <div class="nav-dropdown">
+      <a class="nav-dropbtn">质控报表 ▾</a>
+      <div class="nav-dropdown-content">
+        <a href="/prone.html">俯卧位质控</a>
+        <a href="/drug.html">微泵药统计</a>
+      </div>
+    </div>
+  </nav>
 </header>
 
 <section class="card filter">
@@ -43,5 +55,6 @@
 </section>
 
 <script src="js/detail.js"></script>
+<script src="js/nav.js"></script>
 </body>
 </html>

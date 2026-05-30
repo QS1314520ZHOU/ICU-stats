@@ -154,16 +154,33 @@ router.get("/daily-trend", async (req, res) => {
       byDate[date].push(session);
     }
 
-    // 3. 计算每日指标
-    const trend = Object.entries(byDate)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, dateSessions]) => {
-        const indicators = calculateQualityIndicators(dateSessions);
-        return {
-          date,
-          ...indicators
-        };
+    // 3. 按天生成完整日期列表，用真实数据 left-join 覆盖
+    const dateMap = {};
+    for (const [date, dateSessions] of Object.entries(byDate)) {
+      dateMap[date] = calculateQualityIndicators(dateSessions);
+    }
+
+    const trend = [];
+    const cur = new Date(startDate + "T00:00:00+08:00");
+    const end = new Date(endDate + "T00:00:00+08:00");
+    while (cur <= end) {
+      const yyyy = cur.getFullYear();
+      const mm = String(cur.getMonth() + 1).padStart(2, "0");
+      const dd = String(cur.getDate()).padStart(2, "0");
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+
+      const indicators = dateMap[dateStr];
+      trend.push({
+        date: dateStr,
+        dailySessionCount: indicators ? indicators.totalSessions : 0,
+        durationMetRate: indicators ? indicators.durationMetRate : null,
+        indicationMetRate: indicators ? indicators.indicationMetRate : null,
+        effectiveRate: indicators ? indicators.effectiveRate : null,
+        ...(indicators || {})
       });
+
+      cur.setDate(cur.getDate() + 1);
+    }
 
     res.json({
       code: 0,

@@ -78,3 +78,15 @@ tr:hover { background:#fafcff; }
   .overview-main { grid-column:1/-1; }
   .dashboard { grid-template-columns:1fr; }
 }
+
+/* 导航下拉菜单 */
+nav { display:flex; align-items:center; gap:6px; }
+.nav-dropdown { position:relative; }
+.nav-dropbtn { cursor:pointer; user-select:none; }
+.nav-dropdown-content { display:none; position:absolute; right:0; top:100%;
+  background:#fff; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.15);
+  min-width:150px; z-index:100; overflow:hidden; }
+header .nav-dropdown-content a { display:block; padding:10px 16px; color:#263241; font-size:14px;
+  background:transparent; border-radius:0; }
+header .nav-dropdown-content a:hover { background:#f0f6ff; }
+.nav-dropdown:hover .nav-dropdown-content { display:block; }

@@ -167,12 +167,11 @@ function createPairedSession(pid, startEvent, endEvent) {
  */
 function createUnclosedSession(pid, startEvent) {
   const startTime = new Date(startEvent.time);
-  const now = new Date();
-  const durationMs = now.getTime() - startTime.getTime();
-  const durationHours = durationMs / (1000 * 60 * 60);
 
-  // 判断是否超过未闭合超时时间
-  const isUnclosedTimeout = durationHours > config.unclosedTimeoutHours;
+  // 未闭合超时判断（仅适用于实时场景）
+  const now = new Date();
+  const elapsedHours = (now.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+  const isUnclosedTimeout = elapsedHours > config.unclosedTimeoutHours;
 
   return {
     pid,
@@ -213,13 +212,10 @@ function createOrphanEndSession(pid, endEvent) {
   };
 }
 
-/**
- * 为俯卧位治疗记录添加血气数据
- */
 async function enrichSessionsWithBga(db, sessions) {
   if (sessions.length === 0) return sessions;
 
-  // 1. 获取所有相关的患者 mrn
+  // 1. 获取所有相关患者
   const pidList = [...new Set(sessions.map(s => s.pid))];
   const { ObjectId } = require("mongodb");
   const patients = await db.collection("patient")
@@ -232,7 +228,7 @@ async function enrichSessionsWithBga(db, sessions) {
     patientMap[p._id.toString()] = p;
   }
 
-  // 2. 获取所有相关的血气数据（PaO2 从 bGATemp）
+  // 2. 获取动脉血气记录（PaO2 + 预算PF），bedsides 只保留 PaO2 相关 + PF 比值
   const mrnList = [...new Set(patients.map(p => p.mrn).filter(Boolean))];
   const bgaRecords = await db.collection("bGATemp")
     .find({
@@ -247,7 +243,9 @@ async function enrichSessionsWithBga(db, sessions) {
         $filter: {
           input: "$bedsides",
           as: "b",
-          cond: { $eq: ["$$b.code", "param_bg_po2"] }
+          cond: {
+            $in: ["$$b.code", ["param_bg_po2", "param_bg_po2_T", "param_bg_P/Fratio"]]
+          }
         }
       }
     })
@@ -256,13 +254,11 @@ async function enrichSessionsWithBga(db, sessions) {
   // 3. 按 mrn 分组血气数据
   const bgaByMrn = {};
   for (const bga of bgaRecords) {
-    if (!bgaByMrn[bga.mrn]) {
-      bgaByMrn[bga.mrn] = [];
-    }
+    if (!bgaByMrn[bga.mrn]) bgaByMrn[bga.mrn] = [];
     bgaByMrn[bga.mrn].push(bga);
   }
 
-  // 4. 获取所有相关的 FiO2 数据（从 bedside 集合）
+  // 4. 获取 bedside 集合的 FiO2 数据
   const fio2Records = await db.collection("bedside")
     .find({
       pid: { $in: pidList },
@@ -272,16 +268,14 @@ async function enrichSessionsWithBga(db, sessions) {
     .project({ pid: 1, time: 1, strVal: 1 })
     .toArray();
 
-  // 5. 按 pid 分组 FiO2 数据
+  // 5. 按 pid 分组 FiO2
   const fio2ByPid = {};
   for (const fio2 of fio2Records) {
-    if (!fio2ByPid[fio2.pid]) {
-      fio2ByPid[fio2.pid] = [];
-    }
+    if (!fio2ByPid[fio2.pid]) fio2ByPid[fio2.pid] = [];
     fio2ByPid[fio2.pid].push(fio2);
   }
 
-  // 6. 为每个俯卧位治疗记录添加患者信息和血气数据
+  // 6. 为每个 session 添加血气数据
   const enrichedSessions = [];
   for (const session of sessions) {
     const patient = patientMap[session.pid];
@@ -291,57 +285,53 @@ async function enrichSessionsWithBga(db, sessions) {
     const bgaList = bgaByMrn[mrn] || [];
     const fio2List = fio2ByPid[session.pid] || [];
 
-    // 查找治疗前血气（开始前 N 小时内最近一次）
+    // 查找治疗前血气：开始前 N 小时内最近一次，且能算出有效 PF
     let preBga = null;
-    let preFiO2 = null;
+    let prePFRatio = null;
     if (session.startTime) {
       const preWindowStart = new Date(session.startTime.getTime() - config.preBgaWindowHours * 60 * 60 * 1000);
       const preWindowEnd = session.startTime;
 
-      // 查找治疗前 PaO2
-      const preBgaCandidates = bgaList.filter(bga => {
-        const bgaTime = new Date(bga.eventExe.startTime);
-        return bgaTime >= preWindowStart && bgaTime <= preWindowEnd;
-      }).sort((a, b) => new Date(b.eventExe.startTime) - new Date(a.eventExe.startTime));
+      const candidates = bgaList
+        .filter(bga => {
+          const t = new Date(bga.eventExe.startTime);
+          return t >= preWindowStart && t <= preWindowEnd;
+        })
+        .sort((a, b) => new Date(b.eventExe.startTime) - new Date(a.eventExe.startTime));
 
-      preBga = preBgaCandidates[0] || null;
-
-      // 查找治疗前 FiO2（最近一次）
-      const preFiO2Candidates = fio2List.filter(fio2 => {
-        const fio2Time = new Date(fio2.time);
-        return fio2Time >= preWindowStart && fio2Time <= preWindowEnd;
-      }).sort((a, b) => new Date(b.time) - new Date(a.time));
-
-      preFiO2 = preFiO2Candidates[0] || null;
+      for (const cand of candidates) {
+        const pf = extractPFRatio(cand, fio2List, preWindowStart, preWindowEnd);
+        if (pf != null) {
+          preBga = cand;
+          prePFRatio = pf;
+          break;
+        }
+      }
     }
 
-    // 查找治疗后血气（结束后 N 小时内最近一次）
+    // 查找治疗后血气：结束后 N 小时内最近一次，且能算出有效 PF
     let postBga = null;
-    let postFiO2 = null;
+    let postPFRatio = null;
     if (session.endTime && !session.isUnclosed) {
       const postWindowStart = session.endTime;
       const postWindowEnd = new Date(session.endTime.getTime() + config.postBgaWindowHours * 60 * 60 * 1000);
 
-      // 查找治疗后 PaO2
-      const postBgaCandidates = bgaList.filter(bga => {
-        const bgaTime = new Date(bga.eventExe.startTime);
-        return bgaTime >= postWindowStart && bgaTime <= postWindowEnd;
-      }).sort((a, b) => new Date(a.eventExe.startTime) - new Date(b.eventExe.startTime));
+      const candidates = bgaList
+        .filter(bga => {
+          const t = new Date(bga.eventExe.startTime);
+          return t >= postWindowStart && t <= postWindowEnd;
+        })
+        .sort((a, b) => new Date(a.eventExe.startTime) - new Date(b.eventExe.startTime));
 
-      postBga = postBgaCandidates[0] || null;
-
-      // 查找治疗后 FiO2（最近一次）
-      const postFiO2Candidates = fio2List.filter(fio2 => {
-        const fio2Time = new Date(fio2.time);
-        return fio2Time >= postWindowStart && fio2Time <= postWindowEnd;
-      }).sort((a, b) => new Date(a.time) - new Date(b.time));
-
-      postFiO2 = postFiO2Candidates[0] || null;
+      for (const cand of candidates) {
+        const pf = extractPFRatio(cand, fio2List, postWindowStart, postWindowEnd);
+        if (pf != null) {
+          postBga = cand;
+          postPFRatio = pf;
+          break;
+        }
+      }
     }
-
-    // 提取 PF 值
-    const prePFRatio = extractPFRatioFromSources(preBga, preFiO2);
-    const postPFRatio = extractPFRatioFromSources(postBga, postFiO2);
 
     enrichedSessions.push({
       ...session,
@@ -353,11 +343,9 @@ async function enrichSessionsWithBga(db, sessions) {
       bedDoctor: patient.bedDoctor,
       preBgaId: preBga ? preBga._id.toString() : null,
       preBgaTime: preBga ? new Date(preBga.eventExe.startTime) : null,
-      preFiO2Time: preFiO2 ? new Date(preFiO2.time) : null,
       prePFRatio,
       postBgaId: postBga ? postBga._id.toString() : null,
       postBgaTime: postBga ? new Date(postBga.eventExe.startTime) : null,
-      postFiO2Time: postFiO2 ? new Date(postFiO2.time) : null,
       postPFRatio
     });
   }
@@ -366,58 +354,88 @@ async function enrichSessionsWithBga(db, sessions) {
 }
 
 /**
- * 从血气记录和 FiO2 记录中提取 PF 比值
- * @param {Object} bga - 血气记录（从 bGATemp）
- * @param {Object} fio2Record - FiO2 记录（从 bedside）
- * @returns {number|null} PF 比值
+ * 从单条血气记录中提取 PF 比值
+ * 优先级 1：bGATemp 预算值 param_bg_P/Fratio
+ * 优先级 2：PaO2（param_bg_po2，回退 param_bg_po2_T）+ FiO2（从 bedside 集合 param_FiO2）
+ * @param {Object} bga - 血气记录（bGATemp）
+ * @param {Array} fio2List - 该患者的 FiO2 列表（bedside 集合）
+ * @param {Date} timeStart - 时间窗口起点
+ * @param {Date} timeEnd - 时间窗口终点
+ * @returns {number|null} PF 比值，无法计算时返回 null
  */
-function extractPFRatioFromSources(bga, fio2Record) {
-  if (!bga || !bga.bedsides) return null;
+function extractPFRatio(bga, fio2List, timeStart, timeEnd) {
+  if (!bga || !Array.isArray(bga.bedsides)) return null;
 
-  // 从血气记录中提取 PaO2
   let pao2 = null;
+  let pao2T = null;
+  let pfRatio = null;
+
   for (const bedside of bga.bedsides) {
-    if (bedside.code === "param_bg_po2" && bedside.fVal != null) {
-      pao2 = bedside.fVal;
-      break;
+    if (bedside.code === "param_bg_P/Fratio") {
+      pfRatio = parseBedsideValue(bedside);
+    } else if (bedside.code === "param_bg_po2") {
+      pao2 = parseBedsideValue(bedside);
+    } else if (bedside.code === "param_bg_po2_T") {
+      pao2T = parseBedsideValue(bedside);
     }
   }
 
-  // 从 FiO2 记录中提取 FiO2
-  let fio2 = null;
-  if (fio2Record && fio2Record.strVal) {
-    fio2 = parseFloat(fio2Record.strVal);
-    if (isNaN(fio2)) fio2 = null;
-  }
+  // 优先级 1：直接用预算的 PF 比值
+  if (pfRatio != null && pfRatio > 0) return pfRatio;
 
-  if (pao2 == null || fio2 == null || fio2 <= 0) return null;
+  // 优先级 2：PaO2 + FiO2 手动计算
+  const effectivePaO2 = pao2 != null ? pao2 : pao2T;
+  if (effectivePaO2 == null) return null;
 
-  return pao2 / (fio2 / 100);
+  // 从 bedside 集合查找时间窗口内最近的 FiO2
+  const fio2 = findNearestFiO2(fio2List, timeStart, timeEnd);
+  if (fio2 == null || fio2 <= 0) return null;
+
+  // FiO2 单位归一化：≤1 视为小数（0.4），>1 视为百分数（40）
+  const fio2Decimal = fio2 <= 1 ? fio2 : fio2 / 100;
+  if (fio2Decimal <= 0 || fio2Decimal > 1) return null;
+
+  return effectivePaO2 / fio2Decimal;
 }
 
 /**
- * 从血气记录中提取 PF 比值（兼容旧版本）
- * @param {Object} bga - 血气记录
- * @returns {number|null} PF 比值
+ * 从 bedside 元素中提取数值，优先 fVal，回退 strVal
  */
-function extractPFRatio(bga) {
-  if (!bga || !bga.bedsides) return null;
+function parseBedsideValue(bedside) {
+  if (bedside == null) return null;
+  if (typeof bedside.fVal === "number" && !isNaN(bedside.fVal)) {
+    return bedside.fVal;
+  }
+  if (bedside.strVal != null) {
+    const v = parseFloat(bedside.strVal);
+    if (!isNaN(v)) return v;
+  }
+  return null;
+}
 
-  let pao2 = null;
-  let fio2 = null;
+/**
+ * 在时间窗口内查找最近的 FiO2 值
+ * @param {Array} fio2List - FiO2 记录列表
+ * @param {Date} timeStart - 窗口起点
+ * @param {Date} timeEnd - 窗口终点
+ * @returns {number|null} FiO2 值
+ */
+function findNearestFiO2(fio2List, timeStart, timeEnd) {
+  if (!fio2List || fio2List.length === 0) return null;
 
-  for (const bedside of bga.bedsides) {
-    if (bedside.code === "param_bg_po2" && bedside.fVal != null) {
-      pao2 = bedside.fVal;
-    }
-    if (bedside.code === "param_bg_FiO2" && bedside.fVal != null) {
-      fio2 = bedside.fVal;
+  let best = null;
+  for (const rec of fio2List) {
+    const t = new Date(rec.time);
+    if (t >= timeStart && t <= timeEnd) {
+      const val = rec.strVal != null ? parseFloat(rec.strVal) : null;
+      if (val != null && !isNaN(val) && val > 0) {
+        if (!best || t > new Date(best.time)) {
+          best = rec;
+        }
+      }
     }
   }
-
-  if (pao2 == null || fio2 == null || fio2 <= 0) return null;
-
-  return pao2 / (fio2 / 100);
+  return best ? parseFloat(best.strVal) : null;
 }
 
 /**
@@ -536,18 +554,39 @@ function calculateQualityIndicators(sessions) {
     ? (abnormalSessions / totalSessions) * 100
     : null;
 
+  // 数据完整性指标
+  const durationDataCompleteness = totalSessions > 0
+    ? (validSessionsWithDuration.length / totalSessions) * 100
+    : null;
+  const indicationDataCompleteness = totalSessions > 0
+    ? (validSessionsWithPrePF.length / totalSessions) * 100
+    : null;
+  const effectiveDataCompleteness = totalSessions > 0
+    ? (validSessionsWithBothPF.length / totalSessions) * 100
+    : null;
+
   return {
     totalSessions,
     validSessions,
     abnormalSessions,
+    // 时长指标
     durationMetCount,
+    durationMetDenominator: validSessionsWithDuration.length,
     durationMetRate,
+    durationDataCompleteness,
     totalDurationHours,
     avgDurationHours,
+    // 适应症指标
     indicationMetCount,
+    indicationMetDenominator: validSessionsWithPrePF.length,
     indicationMetRate,
+    indicationDataCompleteness,
+    // 有效性指标
     effectiveCount,
+    effectiveDenominator: validSessionsWithBothPF.length,
     effectiveRate,
+    effectiveDataCompleteness,
+    // 异常指标
     unclosedCount,
     durationAbnormalCount,
     sequenceAbnormalCount,

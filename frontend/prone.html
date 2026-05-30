@@ -253,6 +253,21 @@
     background: #f5f7fa;
   }
 
+  /* 患者分组交替底色 */
+  .group-even td { background: #fff; }
+  .group-odd td { background: #f5f5f5; }
+  .group-even:hover td, .group-odd:hover td { background: #f5f7fa; }
+
+  /* 小计行 */
+  .subtotal-row td {
+    background: #e8f4f8 !important;
+    font-weight: 600;
+    font-size: 13px;
+    color: #1a5276;
+    padding: 8px 15px;
+    border-bottom: 2px solid var(--border);
+  }
+
   .status-badge {
     display: inline-block;
     padding: 4px 8px;
@@ -372,12 +387,18 @@
 <body>
 <header>
   <div>
-    <h1>ICU 俯卧位质控报表</h1>
-    <p id="subtitle" style="margin:5px 0 0; font-size:12px; opacity:0.8;">俯卧位治疗质量监控与分析</p>
+    <h1>ICU 质控管理平台</h1>
+    <p>重症质量管理与决策支持</p>
   </div>
   <nav>
-    <a href="/">首页</a>
-    <a href="/prone.html" class="active">俯卧位质控</a>
+    <a href="/index.html">首页</a>
+    <div class="nav-dropdown">
+      <a class="nav-dropbtn active">质控报表 ▾</a>
+      <div class="nav-dropdown-content">
+        <a href="/prone.html">俯卧位质控</a>
+        <a href="/drug.html">微泵药统计</a>
+      </div>
+    </div>
   </nav>
 </header>
 
@@ -482,9 +503,16 @@ const RATE_META = {
 
 // 页面加载时初始化
 document.addEventListener("DOMContentLoaded", function() {
+  const urlParams = new URLSearchParams(location.search);
+  // 从 URL 读取 deptCode，加载科室列表后自动选中
+  const urlDeptCode = urlParams.get("deptCode") || "";
   initDateRange();
-  loadDeptList();
-  applyFilter();
+  loadDeptList().then(() => {
+    if (urlDeptCode) {
+      document.getElementById("deptFilter").value = urlDeptCode;
+    }
+    applyFilter();
+  });
 });
 
 // 初始化日期范围（默认最近30天）
@@ -738,11 +766,11 @@ function renderTrendChart(trend) {
       {
         type: "value",
         name: meta.label + " (%)",
-        nameTextStyle: { fontSize: 11, color: meta.color, padding: [0, 0, 0, 40] },
-        axisLabel: { fontSize: 11, color: meta.color, formatter: "{value}%" },
+        nameTextStyle: { fontSize: 11, color: "#FF8C00", padding: [0, 0, 0, 40] },
+        axisLabel: { fontSize: 11, color: "#FF8C00", formatter: "{value}%" },
         splitLine: { show: false },
         min: 0,
-        max: 100
+        max: function(value) { return Math.min(100, Math.ceil((value.max + 10) / 10) * 10); }
       }
     ],
     series: [
@@ -768,13 +796,20 @@ function renderTrendChart(trend) {
         symbol: "circle",
         symbolSize: 6,
         smooth: true,
-        lineStyle: { width: 2.5, color: meta.color },
-        itemStyle: { color: meta.color },
+        z: 10,
+        lineStyle: { width: 3, color: "#FF8C00" },
+        itemStyle: { color: "#FF8C00" },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: meta.color + "30" },
-            { offset: 1, color: meta.color + "05" }
+            { offset: 0, color: "#FF8C0030" },
+            { offset: 1, color: "#FF8C0005" }
           ])
+        },
+        markLine: {
+          silent: true,
+          lineStyle: { type: "dashed", color: "#999", width: 1 },
+          label: { formatter: "均值 {c}%" },
+          data: [{ type: "average" }]
         },
         connectNulls: true,
         data: rates
@@ -816,27 +851,80 @@ function renderSessionTable(details) {
     return;
   }
 
-  tbody.innerHTML = details.map(session => `
-    <tr>
-      <td>${session.patientName || '-'}</td>
-      <td>${session.mrn || '-'}</td>
-      <td>${session.bed || '-'}</td>
-      <td>${session.bedDoctor || '-'}</td>
-      <td>${formatDateTime(session.startTime)}</td>
-      <td>${session.endTime ? formatDateTime(session.endTime) : '<span style="color:var(--warning);">进行中</span>'}</td>
-      <td>${session.durationHours != null ? session.durationHours.toFixed(1) : '-'}</td>
-      <td>${session.prePFRatio != null ? session.prePFRatio.toFixed(0) : '<span style="color:var(--text-light);">无数据</span>'}</td>
-      <td>${session.postPFRatio != null ? session.postPFRatio.toFixed(0) : '<span style="color:var(--text-light);">无数据</span>'}</td>
-      <td>${session.pfImprovementRate != null ?
-        (session.pfImprovementRate >= 0 ? '+' : '') + session.pfImprovementRate.toFixed(1) + '%' :
-        '<span style="color:var(--text-light);">-</span>'}</td>
-      <td>
-        <span class="status-badge ${session.isAbnormal ? 'abnormal' : 'normal'}">
-          ${session.isAbnormal ? '异常' : '正常'}
-        </span>
-      </td>
-    </tr>
-  `).join("");
+  // 按 mrn 分组
+  const groups = [];
+  let lastMrn = null;
+  let groupIdx = -1;
+  for (const s of details) {
+    if (s.mrn !== lastMrn) {
+      groupIdx++;
+      groups.push({ mrn: s.mrn, patientName: s.patientName, rows: [] });
+      lastMrn = s.mrn;
+    }
+    groups[groups.length - 1].rows.push(s);
+  }
+
+  const rows = [];
+  for (let gi = 0; gi < groups.length; gi++) {
+    const g = groups[gi];
+    const rowClass = gi % 2 === 1 ? 'group-odd' : 'group-even';
+
+    // 患者明细行
+    for (const session of g.rows) {
+      // 时长单元格：>20h 黄色背景
+      const durStyle = session.durationHours != null && session.durationHours > 20
+        ? ' style="background:#fff3cd;"' : '';
+      const durVal = session.durationHours != null ? session.durationHours.toFixed(1) : '-';
+
+      // PF 提升率：负数红色文字
+      let pfCell = '';
+      if (session.pfImprovementRate != null) {
+        const colorStyle = session.pfImprovementRate < 0 ? ' style="color:#e74c3c;font-weight:600;"' : '';
+        pfCell = `<td${colorStyle}>${session.pfImprovementRate >= 0 ? '+' : ''}${session.pfImprovementRate.toFixed(1)}%</td>`;
+      } else {
+        pfCell = '<td><span style="color:#999;">-</span></td>';
+      }
+
+      rows.push(`
+        <tr class="${rowClass}">
+          <td>${session.patientName || '-'}</td>
+          <td>${session.mrn || '-'}</td>
+          <td>${session.bed || '-'}</td>
+          <td>${session.bedDoctor || '-'}</td>
+          <td>${formatDateTime(session.startTime)}</td>
+          <td>${session.endTime ? formatDateTime(session.endTime) : '<span style="color:var(--warning);">进行中</span>'}</td>
+          <td${durStyle}>${durVal}</td>
+          <td>${session.prePFRatio != null ? session.prePFRatio.toFixed(0) : '<span style="color:#999;">无数据</span>'}</td>
+          <td>${session.postPFRatio != null ? session.postPFRatio.toFixed(0) : '<span style="color:#999;">无数据</span>'}</td>
+          ${pfCell}
+          <td>
+            <span class="status-badge ${session.isAbnormal ? 'abnormal' : 'normal'}">
+              ${session.isAbnormal ? '异常' : '正常'}
+            </span>
+          </td>
+        </tr>`);
+    }
+
+    // 小计行
+    const total = g.rows.length;
+    const validRows = g.rows.filter(s => !s.isAbnormal);
+    const totalDur = validRows.reduce((sum, s) => sum + (s.durationHours || 0), 0);
+    const durWithVal = validRows.filter(s => s.durationHours != null);
+    const durMet = durWithVal.filter(s => s.isDurationMet);
+    const durRate = durWithVal.length > 0 ? ((durMet.length / durWithVal.length) * 100).toFixed(0) + '%' : 'N/A';
+    const withBothPF = validRows.filter(s => s.isEffective != null);
+    const effective = withBothPF.filter(s => s.isEffective);
+    const effRate = withBothPF.length > 0 ? ((effective.length / withBothPF.length) * 100).toFixed(0) + '%' : 'N/A';
+
+    rows.push(`
+      <tr class="subtotal-row">
+        <td colspan="11">
+          【小计】${g.patientName || '-'}：${total}次 / 累计${totalDur.toFixed(1)}h / 时长达标率${durRate} / 有效率${effRate}
+        </td>
+      </tr>`);
+  }
+
+  tbody.innerHTML = rows.join("");
 }
 
 // 加载科室俯卧位治疗明细
@@ -889,5 +977,6 @@ function formatDateTime(dateStr) {
   });
 }
 </script>
+<script src="js/nav.js"></script>
 </body>
 </html>

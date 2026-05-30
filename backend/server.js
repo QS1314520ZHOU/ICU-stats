@@ -17,6 +17,7 @@ app.use("/api/drug", require("./routes/drug"));
 app.use("/api/bedside", require("./routes/bedside"));
 app.use("/api/report", require("./routes/report"));
 app.use("/api/prone", require("./routes/prone"));
+app.use("/api/dashboard", require("./routes/dashboard"));
 
 const PORT = process.env.PORT || 3000;
 connect()
