@@ -253,11 +253,13 @@ function getDate(offset) {
   return d.toISOString().substring(0, 10);
 }
 
-// 快速入口链接携带所有参数
+// 快速入口链接携带参数（患者列表只带 deptCode）
 if (fullSuffix) {
   document.getElementById("linkProne").href = "/prone.html" + fullSuffix;
   document.getElementById("linkDrug").href = "/drug.html" + fullSuffix;
-  document.getElementById("linkPatients").href = "/drug.html" + fullSuffix;
+}
+if (urlDeptCode) {
+  document.getElementById("linkPatients").href = "/drug.html?deptCode=" + encodeURIComponent(urlDeptCode);
 }
 
 loadSummary();
